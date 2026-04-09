@@ -1,0 +1,59 @@
+# ═══════════════════════════════════════════
+# FoodRush — .gitignore
+# ═══════════════════════════════════════════
+
+# ─── AWS CREDENTIALS & KEYS ─────────────────
+# NEVER commit these — rotate immediately if exposed
+*.pem
+*.ppk
+*_accessKeys.csv
+*_credentials.csv
+.aws/
+aws-credentials*
+
+# ─── ENVIRONMENT FILES ───────────────────────
+# Contains DB passwords and secret config
+.env
+.env.*
+!.env.example
+
+# ─── NODE.JS ─────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.node_repl_history
+*.log
+
+# ─── BUILD ARTIFACTS ─────────────────────────
+*.tar.gz
+*.zip
+*.tgz
+dist/
+build/
+.cache/
+
+# ─── OS FILES ────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ─── IDE / EDITOR ────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+
+# ─── TEMP / SCRATCH ──────────────────────────
+/tmp/
+*.tmp
+*.temp

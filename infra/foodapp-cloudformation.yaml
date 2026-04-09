@@ -1,0 +1,897 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  FoodRush - Complete Food Ordering Platform (Swiggy/Zomato style)
+  Covers: VPC, EC2, IAM, S3, ALB, Auto Scaling, RDS, Lambda, Route53, CloudFormation
+  Domain: learnwithadarsh.site | Region: ap-south-1
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PARAMETERS
+# ══════════════════════════════════════════════════════════════════════════════
+Parameters:
+
+  # ── App ──────────────────────────────────────────────────────────────────
+  AppName:
+    Type: String
+    Default: foodapp
+    Description: Application name prefix for all resources
+
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging, development]
+
+  # ── Network ──────────────────────────────────────────────────────────────
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnet1CIDR:
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnet2CIDR:
+    Type: String
+    Default: 10.0.2.0/24
+
+  PrivateSubnet1CIDR:
+    Type: String
+    Default: 10.0.3.0/24
+
+  PrivateSubnet2CIDR:
+    Type: String
+    Default: 10.0.4.0/24
+
+  # ── EC2 ──────────────────────────────────────────────────────────────────
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: foodApp
+    Description: EC2 Key Pair for SSH access
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro, t3.small, t3.medium]
+
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux 2023 latest AMI (auto-resolves per region)
+
+  # ── Auto Scaling ──────────────────────────────────────────────────────────
+  MinInstances:
+    Type: Number
+    Default: 1
+    MinValue: 1
+
+  MaxInstances:
+    Type: Number
+    Default: 4
+    MaxValue: 10
+
+  DesiredInstances:
+    Type: Number
+    Default: 1
+
+  # ── Database ──────────────────────────────────────────────────────────────
+  DBName:
+    Type: String
+    Default: foodapp
+
+  DBUsername:
+    Type: String
+    Default: foodapp
+
+  DBPassword:
+    Type: String
+    Default: YourStrongPassword123!
+    NoEcho: true
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+
+  # ── Domain ───────────────────────────────────────────────────────────────
+  HostedZoneId:
+    Type: String
+    Default: Z0367376ZWWODPWBUBY2
+    Description: Route 53 Hosted Zone ID for learnwithadarsh.site
+
+  DomainName:
+    Type: String
+    Default: learnwithadarsh.site
+
+  # ── S3 ───────────────────────────────────────────────────────────────────
+  AccountId:
+    Type: String
+    Default: "470561032473"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# METADATA
+# ══════════════════════════════════════════════════════════════════════════════
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: {default: Application}
+        Parameters: [AppName, Environment]
+      - Label: {default: Network}
+        Parameters: [VpcCIDR, PublicSubnet1CIDR, PublicSubnet2CIDR, PrivateSubnet1CIDR, PrivateSubnet2CIDR]
+      - Label: {default: EC2 & Scaling}
+        Parameters: [KeyPairName, InstanceType, AmiId, MinInstances, MaxInstances, DesiredInstances]
+      - Label: {default: Database}
+        Parameters: [DBName, DBUsername, DBPassword, DBInstanceClass]
+      - Label: {default: Domain & DNS}
+        Parameters: [DomainName, HostedZoneId, AccountId]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RESOURCES
+# ══════════════════════════════════════════════════════════════════════════════
+Resources:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. VPC & NETWORKING
+  # ──────────────────────────────────────────────────────────────────────────
+
+  FoodAppVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-vpc"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{Key: Name, Value: !Sub "${AppName}-igw"}]
+
+  AttachInternetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref FoodAppVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Subnets (for ALB & NAT)
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref FoodAppVPC
+      CidrBlock: !Ref PublicSubnet1CIDR
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: [{Key: Name, Value: !Sub "${AppName}-public-1a"}]
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref FoodAppVPC
+      CidrBlock: !Ref PublicSubnet2CIDR
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: [{Key: Name, Value: !Sub "${AppName}-public-1b"}]
+
+  # Private Subnets (for EC2 instances & RDS)
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref FoodAppVPC
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags: [{Key: Name, Value: !Sub "${AppName}-private-1a"}]
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref FoodAppVPC
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags: [{Key: Name, Value: !Sub "${AppName}-private-1b"}]
+
+  # NAT Gateway (allows private EC2s → internet for npm install etc)
+  NatEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachInternetGateway
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags: [{Key: Name, Value: !Sub "${AppName}-nat"}]
+
+  # Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref FoodAppVPC
+      Tags: [{Key: Name, Value: !Sub "${AppName}-public-rt"}]
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachInternetGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref FoodAppVPC
+      Tags: [{Key: Name, Value: !Sub "${AppName}-private-rt"}]
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. SECURITY GROUPS
+  # ──────────────────────────────────────────────────────────────────────────
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AppName}-alb-sg"
+      GroupDescription: ALB security group — allows HTTP/HTTPS from internet
+      VpcId: !Ref FoodAppVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP from internet
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS from internet
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags: [{Key: Name, Value: !Sub "${AppName}-alb-sg"}]
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AppName}-ec2-sg"
+      GroupDescription: EC2 backend security group
+      VpcId: !Ref FoodAppVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: App port from ALB only
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: SSH (restrict in production)
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags: [{Key: Name, Value: !Sub "${AppName}-ec2-sg"}]
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AppName}-rds-sg"
+      GroupDescription: RDS security group — MySQL from EC2 only
+      VpcId: !Ref FoodAppVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+          Description: MySQL from EC2 instances only
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags: [{Key: Name, Value: !Sub "${AppName}-rds-sg"}]
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. IAM ROLES
+  # ──────────────────────────────────────────────────────────────────────────
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-ec2-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ec2.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: FoodAppEC2Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${AppName}-images-${AccountId}"
+                  - !Sub "arn:aws:s3:::${AppName}-images-${AccountId}/*"
+                  - !Sub "arn:aws:s3:::${AppName}-frontend-${AccountId}"
+                  - !Sub "arn:aws:s3:::${AppName}-frontend-${AccountId}/*"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${AppName}-ec2-profile"
+      Roles: [!Ref EC2Role]
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: FoodAppLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:HeadObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${AppName}-images-${AccountId}/*"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. S3 BUCKETS
+  # ──────────────────────────────────────────────────────────────────────────
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AppName}-frontend-${AccountId}"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-frontend"
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${AppName}-frontend-${AccountId}/*"
+
+  ImagesBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: LambdaPermissionS3
+    Properties:
+      BucketName: !Sub "${AppName}-images-${AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, HEAD]
+            AllowedOrigins:
+              - !Sub "https://www.${DomainName}"
+              - !Sub "https://${DomainName}"
+              - http://localhost:3000
+            MaxAge: 3600
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: food-photos/
+            Function: !GetAtt ImageProcessorLambda.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-images"
+
+  ImagesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ImagesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${AppName}-images-${AccountId}/food-photos/*"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 5. LAMBDA (Image Processor)
+  # ──────────────────────────────────────────────────────────────────────────
+
+  ImageProcessorLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-image-processor"
+      Runtime: nodejs18.x
+      Role: !GetAtt LambdaRole.Arn
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          IMAGES_BUCKET: !Sub "${AppName}-images-${AccountId}"
+          REGION: !Ref AWS::Region
+      Code:
+        ZipFile: |
+          const AWS = require('aws-sdk');
+          const s3 = new AWS.S3();
+          const cloudwatch = new AWS.CloudWatch();
+
+          exports.handler = async (event) => {
+            console.log('[FoodApp Lambda] Event:', JSON.stringify(event, null, 2));
+            const results = [];
+
+            for (const record of event.Records) {
+              const bucket = record.s3.bucket.name;
+              const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
+              const size = record.s3.object.size;
+
+              console.log(`Processing: s3://${bucket}/${key} (${size} bytes)`);
+
+              try {
+                const meta = await s3.headObject({ Bucket: bucket, Key: key }).promise();
+                
+                await cloudwatch.putMetricData({
+                  Namespace: 'FoodApp/Uploads',
+                  MetricData: [
+                    { MetricName: 'ImageUploaded', Value: 1, Unit: 'Count',
+                      Dimensions: [{ Name: 'BucketName', Value: bucket }] },
+                    { MetricName: 'UploadSizeBytes', Value: size, Unit: 'Bytes',
+                      Dimensions: [{ Name: 'BucketName', Value: bucket }] }
+                  ]
+                }).promise();
+
+                results.push({
+                  key, size,
+                  contentType: meta.ContentType,
+                  url: `https://${bucket}.s3.${process.env.REGION}.amazonaws.com/${key}`,
+                  processedAt: new Date().toISOString()
+                });
+              } catch (err) {
+                console.error('Error:', key, err.message);
+                results.push({ key, error: err.message });
+              }
+            }
+
+            return { statusCode: 200, body: JSON.stringify({ processed: results.length, results }) };
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-image-processor"
+
+  LambdaPermissionS3:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ImageProcessorLambda
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AccountId
+      SourceArn: !Sub "arn:aws:s3:::${AppName}-images-${AccountId}"
+
+  # CloudWatch Log Group for Lambda
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AppName}-image-processor"
+      RetentionInDays: 14
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 6. RDS (MySQL)
+  # ──────────────────────────────────────────────────────────────────────────
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub "${AppName} RDS subnet group"
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags: [{Key: Name, Value: !Sub "${AppName}-db-subnet-group"}]
+
+  FoodAppDB:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub "${AppName}-db"
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: mysql
+      EngineVersion: "8.0"
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      AllocatedStorage: "20"
+      StorageType: gp2
+      MultiAZ: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-db"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 7. APPLICATION LOAD BALANCER
+  # ──────────────────────────────────────────────────────────────────────────
+
+  FoodAppALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${AppName}-alb"
+      Type: application
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-alb"
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${AppName}-tg"
+      Protocol: HTTP
+      Port: 3000
+      VpcId: !Ref FoodAppVPC
+      TargetType: instance
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: "200"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-tg"
+
+  ALBListenerHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref FoodAppALB
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 8. EC2 LAUNCH TEMPLATE
+  # ──────────────────────────────────────────────────────────────────────────
+
+  EC2LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AppName}-lt"
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyPairName
+        IamInstanceProfile:
+          Name: !Ref EC2InstanceProfile
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -xe
+            exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
+
+            echo "=== FoodRush Bootstrap Starting ==="
+            dnf update -y
+            dnf install -y nodejs npm git
+
+            # Install PM2 globally
+            npm install -g pm2
+
+            cd /home/ec2-user
+
+            # Download backend from S3
+            aws s3 cp s3://${AppName}-images-${AccountId}/backend.tar.gz . --region ${AWS::Region}
+            tar -xzf backend.tar.gz
+
+            # Create .env file with all required settings
+            cat > /home/ec2-user/.env <<'ENVEOF'
+            PORT=3000
+            DB_HOST=${FoodAppDB.Endpoint.Address}
+            DB_USER=${DBUsername}
+            DB_PASS=${DBPassword}
+            DB_NAME=${DBName}
+            S3_BUCKET=${AppName}-images-${AccountId}
+            AWS_REGION=${AWS::Region}
+            NODE_ENV=production
+            ENVEOF
+
+            # Install dependencies
+            npm install --production
+
+            # Load DB schema (with retry since RDS may take a moment)
+            aws s3 cp s3://${AppName}-images-${AccountId}/schema.sql . --region ${AWS::Region} || \
+              aws s3 cp s3://${AppName}-frontend-${AccountId}/schema.sql . --region ${AWS::Region} || true
+
+            for i in 1 2 3; do
+              mysql -h ${FoodAppDB.Endpoint.Address} \
+                    -u ${DBUsername} -p'${DBPassword}' \
+                    < schema.sql && break || sleep 20
+            done
+
+            # Start with PM2
+            pm2 start server.js --name foodapp -i max \
+              --env production \
+              --exp-backoff-restart-delay=100
+            pm2 save
+            pm2 startup systemd -u ec2-user --hp /home/ec2-user
+            systemctl enable pm2-ec2-user || true
+
+            echo "=== FoodRush Bootstrap Complete ==="
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${AppName}-instance"
+              - Key: Environment
+                Value: !Ref Environment
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 9. AUTO SCALING GROUP
+  # ──────────────────────────────────────────────────────────────────────────
+
+  FoodAppASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - FoodAppDB
+      - NatGateway
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT5M
+        WaitOnResourceSignals: false
+    Properties:
+      AutoScalingGroupName: !Sub "${AppName}-asg"
+      LaunchTemplate:
+        LaunchTemplateId: !Ref EC2LaunchTemplate
+        Version: !GetAtt EC2LaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinInstances
+      MaxSize: !Ref MaxInstances
+      DesiredCapacity: !Ref DesiredInstances
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-asg-instance"
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+
+  # ── Scale-Out Policy (CPU > 70%) ────────────────────────────────────────
+  ScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref FoodAppASG
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70.0
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  # ── ALB Request Count Scaling ─────────────────────────────────────────────
+  ALBRequestCountPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref FoodAppASG
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Sub
+            - "${ALBSuffix}/${TGSuffix}"
+            - ALBSuffix: !GetAtt FoodAppALB.LoadBalancerFullName
+              TGSuffix: !GetAtt ALBTargetGroup.TargetGroupFullName
+        TargetValue: 1000.0
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 10. CLOUDWATCH ALARMS
+  # ──────────────────────────────────────────────────────────────────────────
+
+  HighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AppName}-high-cpu"
+      AlarmDescription: Trigger alert when average CPU > 80%
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref FoodAppASG
+
+  UnhealthyHostsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AppName}-unhealthy-hosts"
+      AlarmDescription: Alert when unhealthy hosts > 0
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt FoodAppALB.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt ALBTargetGroup.TargetGroupFullName
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 11. ROUTE 53 DNS
+  # ──────────────────────────────────────────────────────────────────────────
+
+  ApiDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "api.${DomainName}"
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt FoodAppALB.DNSName
+        HostedZoneId: !GetAtt FoodAppALB.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
+  WwwDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "www.${DomainName}"
+      Type: CNAME
+      TTL: "300"
+      ResourceRecords:
+        - !Sub "${AppName}-frontend-${AccountId}.s3-website.${AWS::Region}.amazonaws.com"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OUTPUTS
+# ══════════════════════════════════════════════════════════════════════════════
+Outputs:
+
+  VpcId:
+    Description: VPC ID
+    Value: !Ref FoodAppVPC
+    Export:
+      Name: !Sub "${AppName}-VpcId"
+
+  FrontendURL:
+    Description: Frontend S3 Website URL
+    Value: !Sub "http://www.${DomainName}"
+
+  FrontendS3URL:
+    Description: Direct S3 frontend URL
+    Value: !GetAtt FrontendBucket.WebsiteURL
+
+  ApiURL:
+    Description: API URL via ALB
+    Value: !Sub "https://api.${DomainName}"
+
+  ALBDNSName:
+    Description: ALB DNS Name (use for CNAME if needed)
+    Value: !GetAtt FoodAppALB.DNSName
+
+  DBEndpoint:
+    Description: RDS MySQL endpoint
+    Value: !GetAtt FoodAppDB.Endpoint.Address
+
+  ImagesBucket:
+    Description: S3 bucket for user-uploaded images
+    Value: !Ref ImagesBucket
+
+  LambdaARN:
+    Description: Image processor Lambda ARN
+    Value: !GetAtt ImageProcessorLambda.Arn
+
+  AutoScalingGroup:
+    Description: ASG name
+    Value: !Ref FoodAppASG

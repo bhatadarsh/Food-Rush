@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FoodRush — Order Delicious Food Online | learnwithadarsh.site</title>
+  <meta name="description" content="FoodRush — Order from the best restaurants near you. Fast delivery, great taste. Built on AWS.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #FF5A36;
+      --primary-dark: #e04020;
+      --primary-light: #FF7C5C;
+      --secondary: #1A1A2E;
+      --accent: #FFB800;
+      --bg: #0F0F1A;
+      --bg2: #16213E;
+      --bg3: #1A1A2E;
+      --card: #1E2235;
+      --card2: #252840;
+      --text: #F0F0FF;
+      --text2: #A0A0C0;
+      --text3: #6060AA;
+      --border: rgba(255,255,255,0.08);
+      --success: #00D4AA;
+      --veg: #00C853;
+      --nonveg: #D50000;
+      --shadow: 0 8px 32px rgba(0,0,0,0.4);
+      --radius: 16px;
+      --radius-sm: 8px;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Scrollbar ──────────────────────────────────── */
+    ::-webkit-scrollbar { width:6px; }
+    ::-webkit-scrollbar-track { background: var(--bg2); }
+    ::-webkit-scrollbar-thumb { background: var(--primary); border-radius:3px; }
+
+    /* ── NAV ────────────────────────────────────────── */
+    nav {
+      position: sticky; top:0; z-index: 1000;
+      background: rgba(15,15,26,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex; align-items:center; justify-content:space-between;
+      height: 64px;
+    }
+    .logo { display:flex; align-items:center; gap:10px; text-decoration:none; }
+    .logo-icon { font-size:1.8rem; }
+    .logo-text { font-size:1.4rem; font-weight:800; color:var(--text); }
+    .logo-text span { color:var(--primary); }
+    .nav-center {
+      display:flex; align-items:center; gap:8px;
+      background: var(--card); border:1px solid var(--border);
+      border-radius:12px; padding:0.4rem 1rem; flex:1; max-width:460px; margin:0 2rem;
+    }
+    .nav-center input {
+      border:none; background:transparent; color:var(--text); font-size:0.9rem;
+      outline:none; flex:1; font-family:'Inter',sans-serif;
+    }
+    .nav-center input::placeholder { color:var(--text3); }
+    .search-icon { color:var(--text3); font-size:1rem; }
+    .nav-actions { display:flex; align-items:center; gap:1rem; }
+    .btn-ghost {
+      background:transparent; border:1px solid var(--border); color:var(--text2);
+      padding:0.45rem 1rem; border-radius:10px; cursor:pointer; font-size:0.85rem;
+      font-family:'Inter',sans-serif; transition:all 0.2s;
+    }
+    .btn-ghost:hover { border-color:var(--primary); color:var(--primary); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      border:none; color:white; padding:0.5rem 1.2rem; border-radius:10px;
+      cursor:pointer; font-size:0.85rem; font-weight:600; font-family:'Inter',sans-serif;
+      transition:all 0.2s; display:flex; align-items:center; gap:6px;
+    }
+    .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 16px rgba(255,90,54,0.4); }
+    .cart-count {
+      background:var(--accent); color:#000; border-radius:50%; width:18px; height:18px;
+      font-size:0.7rem; font-weight:700; display:flex; align-items:center; justify-content:center;
+    }
+
+    /* ── HERO ───────────────────────────────────────── */
+    .hero {
+      background: linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 50%, var(--bg) 100%);
+      padding: 5rem 2rem 4rem;
+      text-align:center; position:relative; overflow:hidden;
+    }
+    .hero::before {
+      content:''; position:absolute; inset:0;
+      background: radial-gradient(ellipse 70% 60% at 50% 0%, rgba(255,90,54,0.15), transparent);
+    }
+    .hero-badge {
+      display:inline-flex; align-items:center; gap:6px;
+      background: rgba(255,90,54,0.15); border:1px solid rgba(255,90,54,0.3);
+      color:var(--primary); padding:0.4rem 1rem; border-radius:50px; font-size:0.8rem;
+      font-weight:600; margin-bottom:1.5rem; letter-spacing:0.05em;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.8rem); font-weight:800; line-height:1.1;
+      margin-bottom:1rem; letter-spacing:-0.02em;
+    }
+    .hero h1 .highlight { color:var(--primary); }
+    .hero p { color:var(--text2); font-size:1.1rem; max-width:540px; margin:0 auto 2.5rem; line-height:1.6; }
+    .hero-search {
+      display:flex; align-items:center; max-width:520px; margin:0 auto;
+      background:var(--card); border:1px solid var(--border); border-radius:14px;
+      overflow:hidden; box-shadow:var(--shadow);
+    }
+    .hero-search input {
+      flex:1; padding:1rem 1.2rem; background:transparent; border:none; outline:none;
+      color:var(--text); font-size:1rem; font-family:'Inter',sans-serif;
+    }
+    .hero-search input::placeholder { color:var(--text3); }
+    .hero-search button {
+      padding:1rem 1.5rem; background:var(--primary); border:none; color:white;
+      font-weight:700; cursor:pointer; font-size:0.95rem; font-family:'Inter',sans-serif;
+      transition:background 0.2s;
+    }
+    .hero-search button:hover { background:var(--primary-dark); }
+    .hero-stats {
+      display:flex; justify-content:center; gap:3rem; margin-top:2.5rem; flex-wrap:wrap;
+    }
+    .hero-stat { text-align:center; }
+    .hero-stat .num { font-size:1.6rem; font-weight:800; color:var(--primary); }
+    .hero-stat .label { font-size:0.8rem; color:var(--text3); margin-top:2px; }
+
+    /* ── CATEGORIES ─────────────────────────────────── */
+    .section { padding:2.5rem 2rem; max-width:1200px; margin:0 auto; }
+    .section-header {
+      display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem;
+    }
+    .section-title { font-size:1.4rem; font-weight:700; }
+    .see-all { color:var(--primary); font-size:0.85rem; font-weight:600; cursor:pointer; text-decoration:none; }
+    .categories {
+      display:flex; gap:1rem; overflow-x:auto; padding-bottom:0.5rem;
+      scrollbar-width:none;
+    }
+    .categories::-webkit-scrollbar { display:none; }
+    .category-chip {
+      flex-shrink:0; display:flex; align-items:center; gap:8px;
+      background:var(--card); border:1px solid var(--border);
+      padding:0.6rem 1.2rem; border-radius:50px; cursor:pointer;
+      transition:all 0.2s; font-size:0.85rem; font-weight:500; white-space:nowrap;
+    }
+    .category-chip:hover, .category-chip.active {
+      background:var(--primary); border-color:var(--primary); color:white;
+    }
+    .category-chip .emoji { font-size:1.1rem; }
+
+    /* ── RESTAURANT GRID ─────────────────────────────── */
+    .restaurants-grid {
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap:1.5rem;
+    }
+    .restaurant-card {
+      background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+      overflow:hidden; cursor:pointer; transition:all 0.3s; position:relative;
+    }
+    .restaurant-card:hover {
+      transform:translateY(-4px); box-shadow:0 16px 40px rgba(0,0,0,0.5);
+      border-color:rgba(255,90,54,0.3);
+    }
+    .card-img-wrap { position:relative; overflow:hidden; height:180px; }
+    .card-img-wrap img {
+      width:100%; height:100%; object-fit:cover; transition:transform 0.4s;
+    }
+    .restaurant-card:hover .card-img-wrap img { transform:scale(1.06); }
+    .card-badge {
+      position:absolute; top:10px; left:10px;
+      background:rgba(0,0,0,0.75); backdrop-filter:blur(4px);
+      color:white; font-size:0.7rem; font-weight:600;
+      padding:4px 10px; border-radius:6px; letter-spacing:0.04em;
+    }
+    .card-badge.offer { background:rgba(0,212,170,0.85); color:#000; }
+    .card-img-fav {
+      position:absolute; top:10px; right:10px;
+      background:rgba(0,0,0,0.6); border:none; border-radius:50%;
+      width:32px; height:32px; cursor:pointer; font-size:1rem;
+      display:flex; align-items:center; justify-content:center;
+      transition:transform 0.2s;
+    }
+    .card-img-fav:hover { transform:scale(1.2); }
+    .card-body { padding:1rem; }
+    .card-name { font-size:1rem; font-weight:700; margin-bottom:4px; }
+    .card-meta { color:var(--text2); font-size:0.82rem; margin-bottom:8px; }
+    .card-footer { display:flex; align-items:center; justify-content:space-between; }
+    .card-rating {
+      display:flex; align-items:center; gap:4px; background:rgba(0,212,100,0.15);
+      color:var(--success); font-size:0.82rem; font-weight:600;
+      padding:3px 8px; border-radius:6px;
+    }
+    .card-info { color:var(--text3); font-size:0.78rem; }
+    .card-info span { margin-left:8px; }
+    .card-closed {
+      position:absolute; inset:0; background:rgba(15,15,26,0.75);
+      display:flex; align-items:center; justify-content:center;
+      font-weight:700; font-size:1rem; color:var(--text2);
+    }
+
+    /* ── SKELETON ────────────────────────────────────── */
+    .skeleton {
+      background:linear-gradient(90deg, var(--card) 25%, var(--card2) 50%, var(--card) 75%);
+      background-size:200% 100%; animation:shimmer 1.4s infinite;
+      border-radius:var(--radius); border:1px solid var(--border);
+    }
+    @keyframes shimmer { 0%{background-position:200%} 100%{background-position:-200%} }
+    .skeleton-card { height:280px; }
+
+    /* ── MODAL ───────────────────────────────────────── */
+    .modal-overlay {
+      position:fixed; inset:0; background:rgba(0,0,0,0.7);
+      backdrop-filter:blur(4px); z-index:2000;
+      display:flex; align-items:center; justify-content:center;
+      padding:1rem; opacity:0; pointer-events:none; transition:opacity 0.3s;
+    }
+    .modal-overlay.show { opacity:1; pointer-events:all; }
+    .modal {
+      background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+      width:100%; max-width:700px; max-height:90vh; overflow-y:auto;
+      transform:translateY(30px) scale(0.97); transition:all 0.3s;
+    }
+    .modal-overlay.show .modal { transform:translateY(0) scale(1); }
+    .modal-header {
+      padding:1.5rem; border-bottom:1px solid var(--border);
+      display:flex; align-items:flex-start; justify-content:space-between; gap:1rem;
+    }
+    .modal-close {
+      background:var(--bg2); border:1px solid var(--border); color:var(--text);
+      width:32px; height:32px; border-radius:50%; font-size:1rem; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; flex-shrink:0;
+      transition:all 0.2s;
+    }
+    .modal-close:hover { background:var(--primary); border-color:var(--primary); }
+    .modal-body { padding:1.5rem; }
+
+    /* ── MENU ITEM ───────────────────────────────────── */
+    .menu-category { font-size:1rem; font-weight:700; margin:1.2rem 0 0.8rem; color:var(--text2); text-transform:uppercase; letter-spacing:0.08em; font-size:0.8rem; }
+    .menu-item {
+      display:flex; align-items:center; gap:1rem; padding:1rem;
+      background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius-sm);
+      margin-bottom:0.6rem; transition:border-color 0.2s;
+    }
+    .menu-item:hover { border-color:rgba(255,90,54,0.3); }
+    .veg-dot {
+      width:12px; height:12px; border-radius:50%; flex-shrink:0;
+    }
+    .veg-dot.veg { background:var(--veg); box-shadow:0 0 6px var(--veg); }
+    .veg-dot.nonveg { background:var(--nonveg); box-shadow:0 0 6px var(--nonveg); }
+    .menu-item-info { flex:1; }
+    .menu-item-name { font-weight:600; font-size:0.95rem; }
+    .menu-item-desc { color:var(--text3); font-size:0.8rem; margin-top:2px; }
+    .menu-item-price { font-weight:700; color:var(--accent); font-size:0.95rem; }
+    .btn-add {
+      background:transparent; border:1px solid var(--primary); color:var(--primary);
+      padding:0.35rem 0.9rem; border-radius:8px; cursor:pointer; font-size:0.8rem;
+      font-weight:600; font-family:'Inter',sans-serif; transition:all 0.2s;
+      display:flex; align-items:center; gap:4px;
+    }
+    .btn-add:hover { background:var(--primary); color:white; }
+    .qty-ctrl { display:flex; align-items:center; gap:8px; }
+    .qty-btn {
+      background:var(--primary); border:none; color:white; width:28px; height:28px;
+      border-radius:6px; cursor:pointer; font-size:1rem; font-weight:700;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .qty-num { font-weight:700; min-width:16px; text-align:center; }
+
+    /* ── CART SIDEBAR ────────────────────────────────── */
+    .cart-sidebar {
+      position:fixed; top:0; right:0; width:380px; height:100vh;
+      background:var(--bg2); border-left:1px solid var(--border);
+      z-index:3000; transform:translateX(100%); transition:transform 0.35s cubic-bezier(.4,0,.2,1);
+      display:flex; flex-direction:column;
+    }
+    .cart-sidebar.open { transform:translateX(0); }
+    .cart-header {
+      padding:1.2rem 1.5rem; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    .cart-header h3 { font-size:1.1rem; font-weight:700; }
+    .cart-items { flex:1; overflow-y:auto; padding:1rem 1.5rem; }
+    .cart-item {
+      display:flex; align-items:center; gap:0.8rem;
+      padding:0.8rem 0; border-bottom:1px solid var(--border);
+    }
+    .cart-item-name { flex:1; font-size:0.9rem; font-weight:500; }
+    .cart-item-price { color:var(--accent); font-weight:600; font-size:0.9rem; }
+    .cart-footer { padding:1.2rem 1.5rem; border-top:1px solid var(--border); }
+    .cart-total { display:flex; justify-content:space-between; margin-bottom:1rem; }
+    .cart-total .label { color:var(--text2); }
+    .cart-total .amount { font-weight:700; font-size:1.1rem; color:var(--accent); }
+    .btn-checkout {
+      width:100%; padding:0.9rem; background:linear-gradient(135deg,var(--primary),var(--primary-dark));
+      border:none; color:white; font-size:1rem; font-weight:700; border-radius:12px;
+      cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s;
+    }
+    .btn-checkout:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(255,90,54,0.4); }
+    .cart-empty { text-align:center; padding:3rem 0; color:var(--text3); }
+    .cart-empty .icon { font-size:3rem; margin-bottom:1rem; }
+
+    /* ── TOAST ───────────────────────────────────────── */
+    .toast-container { position:fixed; bottom:2rem; left:50%; transform:translateX(-50%); z-index:9999; }
+    .toast {
+      background:var(--card2); border:1px solid var(--border); color:var(--text);
+      padding:0.8rem 1.4rem; border-radius:12px; font-size:0.9rem; font-weight:500;
+      box-shadow:var(--shadow); animation:toastIn 0.3s ease; display:flex; align-items:center; gap:8px;
+    }
+    @keyframes toastIn { from{opacity:0; transform:translateY(20px)} to{opacity:1; transform:translateY(0)} }
+    .toast.success { border-color:var(--success); }
+    .toast.error { border-color:var(--primary); }
+
+    /* ── UPLOAD SECTION ──────────────────────────────── */
+    .upload-section {
+      max-width:600px; margin:0 auto 3rem; padding:0 2rem; text-align:center;
+    }
+    .upload-zone {
+      border:2px dashed var(--border); border-radius:var(--radius); padding:2.5rem;
+      cursor:pointer; transition:all 0.2s; background:var(--card);
+    }
+    .upload-zone:hover, .upload-zone.drag { border-color:var(--primary); background:rgba(255,90,54,0.05); }
+    .upload-zone .icon { font-size:2.5rem; margin-bottom:0.8rem; }
+    .upload-zone p { color:var(--text2); font-size:0.9rem; }
+    .upload-zone strong { color:var(--primary); }
+    #fileInput { display:none; }
+    .upload-preview { margin-top:1rem; display:none; }
+    .upload-preview img { max-width:100%; max-height:200px; border-radius:var(--radius-sm); }
+
+    /* ── FOOTER ──────────────────────────────────────── */
+    footer {
+      background:var(--bg2); border-top:1px solid var(--border);
+      padding:2rem; text-align:center; color:var(--text3); font-size:0.82rem;
+    }
+    footer .footer-brand { font-size:1.2rem; font-weight:700; color:var(--text2); margin-bottom:0.5rem; }
+    footer .footer-brand span { color:var(--primary); }
+    footer .footer-links { display:flex; justify-content:center; gap:1.5rem; margin:0.8rem 0; flex-wrap:wrap; }
+    footer .footer-links a { color:var(--text3); text-decoration:none; transition:color 0.2s; }
+    footer .footer-links a:hover { color:var(--primary); }
+
+    /* ── NO RESULTS ──────────────────────────────────── */
+    .no-results { text-align:center; padding:4rem 0; color:var(--text3); }
+    .no-results .icon { font-size:3rem; margin-bottom:1rem; }
+
+    /* ── RESPONSIVE ──────────────────────────────────── */
+    @media(max-width:768px) {
+      .nav-center { display:none; }
+      .hero { padding:3rem 1.5rem 2.5rem; }
+      .section { padding:1.5rem 1rem; }
+      .restaurants-grid { grid-template-columns:1fr; }
+      .cart-sidebar { width:100vw; }
+      .hero-stats { gap:1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="logo" href="#">
+    <span class="logo-icon">🍔</span>
+    <span class="logo-text">Food<span>Rush</span></span>
+  </a>
+  <div class="nav-center">
+    <span class="search-icon">🔍</span>
+    <input id="navSearch" type="text" placeholder="Search restaurants or dishes…" oninput="filterRestaurants(this.value)">
+  </div>
+  <div class="nav-actions">
+    <button class="btn-ghost" onclick="scrollToUpload()">📸 Upload</button>
+    <button class="btn-primary" id="cartBtn" onclick="toggleCart()">
+      🛒 Cart <span class="cart-count" id="cartCount">0</span>
+    </button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">⚡ 30-min delivery guaranteed</div>
+  <h1>Hungry? We've got<br>you <span class="highlight">covered.</span></h1>
+  <p>Order from the best restaurants near you. Fresh food, fast delivery — powered by AWS cloud infrastructure.</p>
+  <div class="hero-search">
+    <input id="heroSearch" type="text" placeholder="Search for pizza, biryani, sushi…" oninput="filterRestaurants(this.value); syncSearch(this.value)">
+    <button>Search 🔍</button>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="num" id="statRestaurants">6+</div><div class="label">Restaurants</div></div>
+    <div class="hero-stat"><div class="num">30 min</div><div class="label">Avg Delivery</div></div>
+    <div class="hero-stat"><div class="num">⭐ 4.4</div><div class="label">Avg Rating</div></div>
+    <div class="hero-stat"><div class="num">24/7</div><div class="label">Always Open</div></div>
+  </div>
+</section>
+
+<!-- CATEGORIES -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">What are you craving?</h2>
+  </div>
+  <div class="categories" id="categories">
+    <div class="category-chip active" onclick="filterByCategory('all', this)"><span class="emoji">🍽️</span> All</div>
+    <div class="category-chip" onclick="filterByCategory('Indian', this)"><span class="emoji">🍛</span> Indian</div>
+    <div class="category-chip" onclick="filterByCategory('Italian', this)"><span class="emoji">🍕</span> Italian</div>
+    <div class="category-chip" onclick="filterByCategory('American', this)"><span class="emoji">🍔</span> American</div>
+    <div class="category-chip" onclick="filterByCategory('Japanese', this)"><span class="emoji">🍣</span> Japanese</div>
+    <div class="category-chip" onclick="filterByCategory('Chinese', this)"><span class="emoji">🥢</span> Chinese</div>
+  </div>
+</div>
+
+<!-- RESTAURANTS -->
+<div class="section" id="restaurantsSection">
+  <div class="section-header">
+    <h2 class="section-title">Restaurants near you</h2>
+    <span class="see-all" onclick="filterRestaurants('')">See all →</span>
+  </div>
+  <div class="restaurants-grid" id="restaurants">
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+  </div>
+</div>
+
+<!-- UPLOAD SECTION -->
+<div class="section" id="uploadSection">
+  <div style="margin-bottom:1rem;">
+    <h2 class="section-title">📸 Upload Food Photo</h2>
+    <p style="color:var(--text2);font-size:0.9rem;margin-top:4px;">Share your food memories — images are stored on AWS S3</p>
+  </div>
+  <div class="upload-section">
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()" 
+         ondragover="event.preventDefault();this.classList.add('drag')" 
+         ondragleave="this.classList.remove('drag')"
+         ondrop="handleDrop(event)">
+      <div class="icon">📷</div>
+      <p>Drag & drop or <strong>click to upload</strong></p>
+      <p style="font-size:0.75rem;margin-top:4px;color:var(--text3)">PNG, JPG, WEBP up to 10MB</p>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)">
+    <div class="upload-preview" id="uploadPreview">
+      <img id="previewImg" src="" alt="Preview">
+      <button class="btn-primary" style="margin-top:1rem;width:100%;justify-content:center;" onclick="uploadImage()">
+        ⬆️ Upload to S3
+      </button>
+    </div>
+    <div id="uploadResult" style="margin-top:1rem;"></div>
+  </div>
+</div>
+
+<!-- MENU MODAL -->
+<div class="modal-overlay" id="menuModal" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2 id="modalTitle" style="font-size:1.3rem;font-weight:700;"></h2>
+        <p id="modalMeta" style="color:var(--text2);font-size:0.85rem;margin-top:4px;"></p>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('menuModal').classList.remove('show')">✕</button>
+    </div>
+    <div class="modal-body" id="menuItems">
+      <div style="text-align:center;padding:2rem;color:var(--text3)">Loading menu…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ORDER SUCCESS MODAL -->
+<div class="modal-overlay" id="successModal" onclick="closeModal(event)">
+  <div class="modal" style="max-width:420px;text-align:center;padding:2.5rem;">
+    <div style="font-size:4rem;margin-bottom:1rem;">🎉</div>
+    <h2 style="font-size:1.4rem;margin-bottom:0.5rem;">Order Placed!</h2>
+    <p id="successMsg" style="color:var(--text2);margin-bottom:1.5rem;"></p>
+    <button class="btn-primary" style="justify-content:center;" onclick="document.getElementById('successModal').classList.remove('show')">Continue Exploring</button>
+  </div>
+</div>
+
+<!-- CART SIDEBAR -->
+<div class="cart-sidebar" id="cartSidebar">
+  <div class="cart-header">
+    <h3>🛒 Your Cart</h3>
+    <button class="modal-close" onclick="toggleCart()">✕</button>
+  </div>
+  <div class="cart-items" id="cartItems">
+    <div class="cart-empty"><div class="icon">🛒</div><p>Your cart is empty</p></div>
+  </div>
+  <div class="cart-footer" id="cartFooter" style="display:none">
+    <div class="cart-total">
+      <span class="label">Subtotal</span>
+      <span class="amount" id="cartTotal">₹0</span>
+    </div>
+    <div class="cart-total" style="margin-bottom:1.5rem">
+      <span class="label" style="color:var(--text3);font-size:0.8rem">Delivery fee</span>
+      <span style="color:var(--success);font-size:0.85rem;font-weight:600">FREE</span>
+    </div>
+    <button class="btn-checkout" onclick="placeOrder()">Place Order →</button>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-brand">Food<span>Rush</span></div>
+  <div class="footer-links">
+    <a href="#">About</a><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Help</a><a href="#">Blog</a>
+  </div>
+  <p>© 2025 FoodRush · Hosted on AWS · <strong>learnwithadarsh.site</strong></p>
+  <p style="margin-top:4px;font-size:0.75rem;">VPC · EC2 Auto Scaling · ALB · S3 · RDS · Lambda · Route 53 · CloudFormation</p>
+</footer>
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+  const API = 'https://api.learnwithadarsh.site';
+  const EMOJI = { Indian:'🍛', Italian:'🍕', American:'🍔', Japanese:'🍣', Chinese:'🥢', default:'🍽️' };
+
+  let allRestaurants = [];
+  let cart = JSON.parse(localStorage.getItem('foodrush_cart') || '[]');
+  let currentRestaurantId = null;
+  let selectedFile = null;
+
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  function toast(msg, type='info', duration=3000) {
+    const icon = type==='success'?'✅' : type==='error'?'❌' : 'ℹ️';
+    const t = document.createElement('div');
+    t.className = `toast ${type}`;
+    t.innerHTML = `<span>${icon}</span><span>${msg}</span>`;
+    document.getElementById('toastContainer').appendChild(t);
+    setTimeout(() => t.remove(), duration);
+  }
+
+  // ── Load Restaurants ───────────────────────────────────────────────────────
+  async function loadRestaurants() {
+    try {
+      const res = await fetch(`${API}/api/restaurants`);
+      if (!res.ok) throw new Error('Server error');
+      allRestaurants = await res.json();
+      document.getElementById('statRestaurants').textContent = `${allRestaurants.length}+`;
+      renderRestaurants(allRestaurants);
+    } catch (e) {
+      console.log('Backend not reachable, using demo data');
+      allRestaurants = getDemoRestaurants();
+      renderRestaurants(allRestaurants);
+    }
+  }
+
+  function getDemoRestaurants() {
+    return [
+      {id:1, name:'Spice Garden', cuisine:'Indian', rating:4.5, delivery_time:30, min_order:149, image_url:'', address:'12 MG Road, Bengaluru', is_open:1},
+      {id:2, name:'Pizza House', cuisine:'Italian', rating:4.2, delivery_time:25, min_order:99, image_url:'', address:'45 Church St, Bengaluru', is_open:1},
+      {id:3, name:'Burger Barn', cuisine:'American', rating:4.0, delivery_time:20, min_order:79, image_url:'', address:'7 Brigade Road, Bengaluru', is_open:1},
+      {id:4, name:'Sushi Sensei', cuisine:'Japanese', rating:4.7, delivery_time:40, min_order:249, image_url:'', address:'9 Indiranagar, Bengaluru', is_open:0},
+      {id:5, name:'Biryani Blues', cuisine:'Indian', rating:4.6, delivery_time:35, min_order:199, image_url:'', address:'22 Koramangala, Bengaluru', is_open:1},
+      {id:6, name:'The Wok', cuisine:'Chinese', rating:4.1, delivery_time:28, min_order:129, image_url:'', address:'5 Whitefield, Bengaluru', is_open:1}
+    ];
+  }
+
+  function getBgColor(cuisine) {
+    const colors = { Indian:'#2D1B0E', Italian:'#1A1520', American:'#1A1206', Japanese:'#0A1A1E', Chinese:'#1A0A0A', default:'#141420' };
+    return colors[cuisine] || colors.default;
+  }
+
+  function renderRestaurants(list) {
+    const grid = document.getElementById('restaurants');
+    if (!list.length) {
+      grid.innerHTML = `<div class="no-results" style="grid-column:1/-1"><div class="icon">🔍</div><p>No restaurants found. Try a different search.</p></div>`;
+      return;
+    }
+    grid.innerHTML = list.map(r => `
+      <div class="restaurant-card" onclick="openMenu(${r.id}, '${escHtml(r.name)}', '${escHtml(r.cuisine)}', ${r.rating}, ${r.delivery_time})">
+        <div class="card-img-wrap">
+          <img 
+            src="${r.image_url || ''}" 
+            onerror="this.style.display='none'; this.parentNode.style.background='${getBgColor(r.cuisine)}'; this.parentNode.style.display='flex'; this.parentNode.style.alignItems='center'; this.parentNode.style.justifyContent='center'; this.parentNode.innerHTML='<span style=\\'font-size:4rem\\'>${EMOJI[r.cuisine]||EMOJI.default}</span>';" 
+            alt="${escHtml(r.name)}"
+            loading="lazy"
+          >
+          <span class="card-badge">🕐 ${r.delivery_time} min</span>
+          <button class="card-img-fav" onclick="event.stopPropagation(); toggleFav(this)">🤍</button>
+          ${!r.is_open ? '<div class="card-closed">⏰ Opens at 10:00 AM</div>' : ''}
+        </div>
+        <div class="card-body">
+          <div class="card-name">${escHtml(r.name)}</div>
+          <div class="card-meta">${escHtml(r.cuisine)} cuisine · Min. ₹${r.min_order}</div>
+          <div class="card-footer">
+            <div class="card-rating">⭐ ${r.rating}</div>
+            <div class="card-info">
+              <span>📍 ${escHtml(r.address||'Bengaluru')}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function escHtml(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function toggleFav(btn) { btn.textContent = btn.textContent === '🤍' ? '❤️' : '🤍'; }
+
+  // ── Filter ─────────────────────────────────────────────────────────────────
+  let activeCuisine = 'all';
+  function filterByCategory(cuisine, el) {
+    document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    activeCuisine = cuisine;
+    applyFilters();
+  }
+
+  function filterRestaurants(query) {
+    document.getElementById('navSearch').value = query;
+    document.getElementById('heroSearch').value = query;
+    applyFilters(query);
+  }
+
+  function syncSearch(val) { document.getElementById('navSearch').value = val; }
+
+  function applyFilters(query) {
+    const q = (query || document.getElementById('navSearch').value).toLowerCase();
+    let filtered = allRestaurants;
+    if (activeCuisine !== 'all') filtered = filtered.filter(r => r.cuisine === activeCuisine);
+    if (q) filtered = filtered.filter(r => r.name.toLowerCase().includes(q) || r.cuisine.toLowerCase().includes(q));
+    renderRestaurants(filtered);
+  }
+
+  // ── Menu Modal ─────────────────────────────────────────────────────────────
+  async function openMenu(id, name, cuisine, rating, deliveryTime) {
+    currentRestaurantId = id;
+    document.getElementById('modalTitle').textContent = name;
+    document.getElementById('modalMeta').textContent = `${cuisine} · ⭐ ${rating} · 🕐 ${deliveryTime} min delivery`;
+    document.getElementById('menuItems').innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text3)">Loading menu…</div>';
+    document.getElementById('menuModal').classList.add('show');
+
+    try {
+      const res = await fetch(`${API}/api/restaurants/${id}/menu`);
+      const items = await res.json();
+      renderMenu(items);
+    } catch(e) {
+      renderMenu(getDemoMenu(id));
+    }
+  }
+
+  function getDemoMenu(id) {
+    const menus = {
+      1:[{id:1,name:'Butter Chicken',price:320,description:'Tender chicken in rich tomato-butter sauce',category:'Main',is_veg:0},
+         {id:2,name:'Dal Makhani',price:220,description:'Slow-cooked black lentils',category:'Main',is_veg:1},
+         {id:3,name:'Garlic Naan',price:60,description:'Soft leavened bread',category:'Bread',is_veg:1},
+         {id:4,name:'Mango Lassi',price:80,description:'Sweet yogurt drink',category:'Beverage',is_veg:1}],
+      2:[{id:5,name:'Margherita Pizza',price:349,description:'Classic tomato, mozzarella, basil',category:'Pizza',is_veg:1},
+         {id:6,name:'BBQ Chicken Pizza',price:449,description:'Grilled chicken, BBQ sauce, onions',category:'Pizza',is_veg:0},
+         {id:7,name:'Pasta Arrabbiata',price:299,description:'Penne in spicy tomato sauce',category:'Pasta',is_veg:1}],
+      3:[{id:8,name:'Classic Cheeseburger',price:199,description:'Beef patty, cheddar, lettuce',category:'Burger',is_veg:0},
+         {id:9,name:'Veggie Burger',price:169,description:'Black bean patty with avocado',category:'Burger',is_veg:1},
+         {id:10,name:'Loaded Fries',price:129,description:'Crispy fries with cheese sauce',category:'Sides',is_veg:1}],
+      4:[{id:11,name:'Salmon Nigiri',price:499,description:'Fresh Atlantic salmon over rice (8pc)',category:'Sushi',is_veg:0},
+         {id:12,name:'Spicy Tuna Roll',price:449,description:'Tuna, cucumber, sriracha',category:'Roll',is_veg:0}],
+      5:[{id:13,name:'Chicken Biryani',price:299,description:'Fragrant basmati with spiced chicken',category:'Main',is_veg:0},
+         {id:14,name:'Veg Biryani',price:249,description:'Mixed vegetable biryani',category:'Main',is_veg:1},
+         {id:15,name:'Raita',price:49,description:'Chilled yogurt with cucumber',category:'Sides',is_veg:1}],
+      6:[{id:16,name:'Kung Pao Chicken',price:299,description:'Stir-fried with peanuts & chilies',category:'Main',is_veg:0},
+         {id:17,name:'Veg Fried Rice',price:199,description:'Wok-tossed rice with vegetables',category:'Rice',is_veg:1},
+         {id:18,name:'Hakka Noodles',price:229,description:'Stir-fried noodles with soy',category:'Noodles',is_veg:1}]
+    };
+    return menus[id] || [];
+  }
+
+  function renderMenu(items) {
+    if (!items.length) {
+      document.getElementById('menuItems').innerHTML = '<p style="color:var(--text3);text-align:center;padding:2rem">No items available.</p>';
+      return;
+    }
+    const grouped = {};
+    items.forEach(item => {
+      if (!grouped[item.category]) grouped[item.category] = [];
+      grouped[item.category].push(item);
+    });
+
+    let html = '';
+    for (const [cat, catItems] of Object.entries(grouped)) {
+      html += `<div class="menu-category">${cat}</div>`;
+      catItems.forEach(item => {
+        const inCart = cart.find(c => c.id === item.id);
+        const qty = inCart ? inCart.qty : 0;
+        html += `
+          <div class="menu-item">
+            <div class="veg-dot ${item.is_veg ? 'veg' : 'nonveg'}"></div>
+            <div class="menu-item-info">
+              <div class="menu-item-name">${escHtml(item.name)}</div>
+              <div class="menu-item-desc">${escHtml(item.description||'')}</div>
+            </div>
+            <div class="menu-item-price">₹${item.price}</div>
+            <div id="ctrl_${item.id}">
+              ${qty > 0
+                ? `<div class="qty-ctrl"><button class="qty-btn" onclick="changeQty(${item.id},-1,'${escHtml(item.name)}',${item.price})">−</button><span class="qty-num">${qty}</span><button class="qty-btn" onclick="changeQty(${item.id},1,'${escHtml(item.name)}',${item.price})">+</button></div>`
+                : `<button class="btn-add" onclick="addToCart(${item.id},'${escHtml(item.name)}',${item.price})">+ Add</button>`
+              }
+            </div>
+          </div>`;
+      });
+    }
+    document.getElementById('menuItems').innerHTML = html;
+  }
+
+  // ── Cart ───────────────────────────────────────────────────────────────────
+  function addToCart(id, name, price) {
+    const existing = cart.find(c => c.id === id);
+    if (existing) { existing.qty++; }
+    else { cart.push({ id, name, price, qty: 1, restaurantId: currentRestaurantId }); }
+    saveCart();
+    updateCartUI();
+    updateItemControl(id, name, price);
+    toast(`${name} added to cart`, 'success', 1500);
+  }
+
+  function changeQty(id, delta, name, price) {
+    const idx = cart.findIndex(c => c.id === id);
+    if (idx === -1) return;
+    cart[idx].qty += delta;
+    if (cart[idx].qty <= 0) cart.splice(idx, 1);
+    saveCart();
+    updateCartUI();
+    updateItemControl(id, name, price);
+  }
+
+  function updateItemControl(id, name, price) {
+    const el = document.getElementById(`ctrl_${id}`);
+    if (!el) return;
+    const item = cart.find(c => c.id === id);
+    if (item && item.qty > 0) {
+      el.innerHTML = `<div class="qty-ctrl"><button class="qty-btn" onclick="changeQty(${id},-1,'${escHtml(name)}',${price})">−</button><span class="qty-num">${item.qty}</span><button class="qty-btn" onclick="changeQty(${id},1,'${escHtml(name)}',${price})">+</button></div>`;
+    } else {
+      el.innerHTML = `<button class="btn-add" onclick="addToCart(${id},'${escHtml(name)}',${price})">+ Add</button>`;
+    }
+  }
+
+  function saveCart() { localStorage.setItem('foodrush_cart', JSON.stringify(cart)); }
+
+  function updateCartUI() {
+    const total = cart.reduce((s, c) => s + c.price * c.qty, 0);
+    const count = cart.reduce((s, c) => s + c.qty, 0);
+    document.getElementById('cartCount').textContent = count;
+    document.getElementById('cartTotal').textContent = `₹${total}`;
+
+    if (!cart.length) {
+      document.getElementById('cartItems').innerHTML = '<div class="cart-empty"><div class="icon">🛒</div><p>Your cart is empty</p></div>';
+      document.getElementById('cartFooter').style.display = 'none';
+    } else {
+      document.getElementById('cartItems').innerHTML = cart.map(c => `
+        <div class="cart-item">
+          <div class="cart-item-name">${escHtml(c.name)}</div>
+          <div class="qty-ctrl">
+            <button class="qty-btn" onclick="changeQty(${c.id},-1,'${escHtml(c.name)}',${c.price}); updateCartUI()">−</button>
+            <span class="qty-num">${c.qty}</span>
+            <button class="qty-btn" onclick="changeQty(${c.id},1,'${escHtml(c.name)}',${c.price}); updateCartUI()">+</button>
+          </div>
+          <div class="cart-item-price">₹${c.price * c.qty}</div>
+        </div>
+      `).join('');
+      document.getElementById('cartFooter').style.display = 'block';
+    }
+  }
+
+  function toggleCart() {
+    document.getElementById('cartSidebar').classList.toggle('open');
+    updateCartUI();
+  }
+
+  // ── Place Order ────────────────────────────────────────────────────────────
+  async function placeOrder() {
+    if (!cart.length) return;
+    const total = cart.reduce((s, c) => s + c.price * c.qty, 0);
+    const restaurantId = cart[0].restaurantId;
+
+    try {
+      const res = await fetch(`${API}/api/orders`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ restaurant_id: restaurantId, total, items: cart })
+      });
+      const data = await res.json();
+      cart = [];
+      saveCart();
+      updateCartUI();
+      toggleCart();
+      document.getElementById('successMsg').textContent = `Order #${data.order_id || Math.floor(Math.random()*9000+1000)} confirmed! Total: ₹${total}. Estimated delivery: 30 min.`;
+      document.getElementById('successModal').classList.add('show');
+    } catch(e) {
+      // Demo mode
+      const orderId = Math.floor(Math.random()*9000+1000);
+      cart = [];
+      saveCart();
+      updateCartUI();
+      toggleCart();
+      document.getElementById('successMsg').textContent = `Order #${orderId} confirmed! Total: ₹${total}. Estimated delivery: 30 min.`;
+      document.getElementById('successModal').classList.add('show');
+    }
+  }
+
+  // ── Image Upload ───────────────────────────────────────────────────────────
+  function handleFileSelect(event) { showPreview(event.target.files[0]); }
+  function handleDrop(event) {
+    event.preventDefault();
+    document.getElementById('uploadZone').classList.remove('drag');
+    showPreview(event.dataTransfer.files[0]);
+  }
+  function showPreview(file) {
+    if (!file) return;
+    selectedFile = file;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('previewImg').src = e.target.result;
+      document.getElementById('uploadPreview').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function uploadImage() {
+    if (!selectedFile) return;
+    toast('Uploading to AWS S3…', 'info');
+    const formData = new FormData();
+    formData.append('image', selectedFile);
+    try {
+      const res = await fetch(`${API}/api/upload`, { method:'POST', body:formData });
+      const data = await res.json();
+      document.getElementById('uploadResult').innerHTML = `
+        <div style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);padding:1rem;border-radius:10px;margin-top:0.5rem;">
+          <p style="color:var(--success);font-weight:600;margin-bottom:6px;">✅ Uploaded successfully!</p>
+          <a href="${data.url}" target="_blank" style="color:var(--primary);font-size:0.85rem;word-break:break-all;">${data.url}</a>
+        </div>`;
+      toast('Image uploaded to S3!', 'success');
+    } catch(e) {
+      toast('Upload requires backend connection', 'error');
+      document.getElementById('uploadResult').innerHTML = `
+        <div style="background:rgba(255,90,54,0.1);border:1px solid rgba(255,90,54,0.3);padding:1rem;border-radius:10px;">
+          <p style="color:var(--primary)">⚠️ Cannot connect to backend API. Make sure EC2 backend is running.</p>
+        </div>`;
+    }
+  }
+
+  function scrollToUpload() {
+    document.getElementById('uploadSection').scrollIntoView({ behavior:'smooth' });
+  }
+
+  // ── Modal helpers ──────────────────────────────────────────────────────────
+  function closeModal(e) {
+    if (e.target.classList.contains('modal-overlay')) {
+      e.target.classList.remove('show');
+    }
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+      document.getElementById('cartSidebar').classList.remove('open');
+    }
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadRestaurants();
+  updateCartUI();
+</script>
+</body>
+</html>
