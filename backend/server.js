@@ -31,6 +31,27 @@ function createPool() {
 }
 createPool();
 
+// ── Root route — API index ─────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+  res.json({
+    name: '🍔 FoodRush API',
+    version: '1.0.0',
+    status: 'running',
+    docs: 'https://github.com/bhatadarsh/Food-Rush',
+    endpoints: {
+      health:      'GET  /health',
+      restaurants: 'GET  /api/restaurants',
+      restaurant:  'GET  /api/restaurants/:id',
+      menu:        'GET  /api/restaurants/:id/menu',
+      reviews:     'GET  /api/restaurants/:id/reviews',
+      addReview:   'POST /api/restaurants/:id/reviews',
+      placeOrder:  'POST /api/orders',
+      getOrder:    'GET  /api/orders/:id',
+      upload:      'POST /api/upload  (multipart: image)'
+    }
+  });
+});
+
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', async (req, res) => {
   try {
