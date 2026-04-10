@@ -445,7 +445,9 @@ Resources:
       VPCSecurityGroups:
         - !Ref RDSSecurityGroup
       DBSubnetGroupName: !Ref DBSubnetGroup
-      BackupRetentionPeriod: 7
+      # Free tier accounts cannot set BackupRetentionPeriod > 0
+      # If you upgrade your account, you can set this to 7 for automatic backups
+      BackupRetentionPeriod: 0
       DeletionProtection: false
       Tags:
         - Key: Name
