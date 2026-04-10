@@ -21,6 +21,10 @@ permissions:
   contents: read
   statuses: write
 
+# Opt into Node.js 24 for GitHub Actions (avoids Node 20 deprecation warning)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deploy:
     name: 🍔 Deploy to AWS
@@ -88,15 +92,39 @@ jobs:
 
           echo "Reading outputs from CF stack: $STACK_NAME"
 
+          # Check if stack exists first (avoids cryptic exit code 254)
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$REGION" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>&1 || echo "DOES_NOT_EXIST")
+
+          if echo "$STACK_STATUS" | grep -q "DOES_NOT_EXIST\|does not exist\|ValidationError"; then
+            echo ""
+            echo "════════════════════════════════════════════════"
+            echo "  ❌ CloudFormation stack not found!"
+            echo "  Stack '$STACK_NAME' does not exist in $REGION"
+            echo ""
+            echo "  👉 Run the '🏗️ Deploy Infrastructure' workflow"
+            echo "     first to create the AWS infrastructure,"
+            echo "     then push code again to trigger this deploy."
+            echo "════════════════════════════════════════════════"
+            echo ""
+            echo "### ❌ Infrastructure Missing" >> $GITHUB_STEP_SUMMARY
+            echo "Stack \`$STACK_NAME\` does not exist. Run the **Deploy Infrastructure** workflow first." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "Stack status: $STACK_STATUS"
+
           OUTPUTS=$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --region "$REGION" \
             --query 'Stacks[0].Outputs' \
-            --output json 2>/dev/null)
+            --output json)
 
           if [ -z "$OUTPUTS" ] || [ "$OUTPUTS" = "null" ]; then
-            echo "❌ CloudFormation stack '$STACK_NAME' not found!"
-            echo "   Run the infra workflow first to create the infrastructure."
+            echo "❌ Stack exists but has no outputs — may still be creating."
             exit 1
           fi
 
@@ -147,8 +175,11 @@ jobs:
           echo "Uploading to S3..."
           aws s3 cp /tmp/backend.tar.gz "s3://$IMAGES_BUCKET/backend.tar.gz" \
             --region "$REGION" --no-progress
-          aws s3 cp schema.sql "s3://$IMAGES_BUCKET/schema.sql" \
-            --region "$REGION" --no-progress
+          # schema.sql lives inside backend/
+          aws s3 cp backend/schema.sql "s3://$IMAGES_BUCKET/schema.sql" \
+            --region "$REGION" --no-progress 2>/dev/null \
+            || aws s3 cp schema.sql "s3://$IMAGES_BUCKET/schema.sql" \
+            --region "$REGION" --no-progress 2>/dev/null || true
           echo "✅ Backend uploaded to s3://$IMAGES_BUCKET/"
 
       # ── 6. Deploy Frontend ───────────────────────────────────
