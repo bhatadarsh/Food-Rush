@@ -47,6 +47,48 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
 
+      # ── Pre-deploy: clean up any orphaned Route53 records ──────
+      # CloudFormation can't overwrite records that exist outside its stack.
+      # If we previously created records manually (e.g. quick CLI fixes),
+      # CF will fail with "record already exists". Delete them first so CF
+      # can CREATE them cleanly.
+      - name: 🧹 Clean up orphaned Route53 records
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          HZ_ID="${{ secrets.HOSTED_ZONE_ID || 'Z0367376ZWWODPWBUBY2' }}"
+          DOMAIN="learnwithadarsh.site"
+
+          delete_if_exists() {
+            local NAME=$1 TYPE=$2
+            RECORD=$(aws route53 list-resource-record-sets \
+              --hosted-zone-id "$HZ_ID" \
+              --query "ResourceRecordSets[?Name==\`${NAME}.\` && Type==\`${TYPE}\`]" \
+              --output json 2>/dev/null)
+
+            if [ "$RECORD" != "[]" ] && [ -n "$RECORD" ]; then
+              echo "  Deleting orphaned $TYPE record: $NAME"
+              # Build delete change-batch from existing record
+              CHANGE_BATCH=$(echo "$RECORD" | python3 -c "
+          import sys, json
+          records = json.load(sys.stdin)
+          print(json.dumps({'Changes': [{'Action': 'DELETE', 'ResourceRecordSet': r} for r in records]}))
+          ")
+              aws route53 change-resource-record-sets \
+                --hosted-zone-id "$HZ_ID" \
+                --change-batch "$CHANGE_BATCH" 2>&1 \
+                && echo "  ✅ Deleted" || echo "  Already gone"
+            else
+              echo "  No orphaned $TYPE record for $NAME"
+            fi
+          }
+
+          echo "Checking for orphaned Route53 records..."
+          delete_if_exists "$DOMAIN"          "A"
+          delete_if_exists "www.$DOMAIN"      "CNAME"
+          delete_if_exists "api.$DOMAIN"      "A"
+          delete_if_exists "api.$DOMAIN"      "CNAME"
+          echo "✅ Route53 pre-clean done"
+
       # ── DEPLOY path ────────────────────────────────────────
       - name: 🚀 Deploy CloudFormation stack
         if: github.event.inputs.action == 'deploy'
