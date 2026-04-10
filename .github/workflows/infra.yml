@@ -1,0 +1,181 @@
+name: 🏗️ Deploy Infrastructure (CloudFormation)
+
+# ─────────────────────────────────────────────────────────────
+# TRIGGERS
+# Manual only — infrastructure changes should be intentional
+# Run this ONCE before using the deploy.yml workflow
+# ─────────────────────────────────────────────────────────────
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'What to do?'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy      # create or update the CF stack
+          - destroy     # delete everything (empties S3 first)
+      db_password:
+        description: 'RDS MySQL password (min 8 chars)'
+        required: true
+        default: 'YourStrongPassword123!'
+        type: string
+      stack_name:
+        description: 'CloudFormation stack name'
+        required: false
+        default: 'foodapp-stack'
+        type: string
+
+jobs:
+  # ═══════════════════════════════════════════════════════════
+  # JOB 1: Deploy Infrastructure
+  # ═══════════════════════════════════════════════════════════
+  deploy-infra:
+    name: 🏗️ ${{ github.event.inputs.action == 'deploy' && 'Create/Update Stack' || 'Destroy Stack' }}
+    runs-on: ubuntu-latest
+    environment: production   # optional: add review requirement in GitHub Settings
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔑 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      # ── DEPLOY path ────────────────────────────────────────
+      - name: 🚀 Deploy CloudFormation stack
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          STACK_NAME="${{ github.event.inputs.stack_name }}"
+          DB_PASSWORD="${{ github.event.inputs.db_password }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Validating template..."
+          aws cloudformation validate-template \
+            --template-body file://infra/foodapp-cloudformation.yaml \
+            --region "$REGION" --query 'Description' --output text
+
+          echo "Deploying stack: $STACK_NAME..."
+          aws cloudformation deploy \
+            --template-file infra/foodapp-cloudformation.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$REGION" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              KeyPairName=foodApp \
+              DBPassword="$DB_PASSWORD" \
+              DomainName=learnwithadarsh.site \
+              HostedZoneId=Z0367376ZWWODPWBUBY2 \
+            --no-fail-on-empty-changeset
+
+          echo "✅ Stack deployed: $STACK_NAME"
+
+      - name: 📋 Show stack outputs
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          STACK_NAME="${{ github.event.inputs.stack_name }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          OUTPUTS=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$REGION" \
+            --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
+            --output text)
+
+          echo "### 📋 Stack Outputs" >> $GITHUB_STEP_SUMMARY
+          echo "| Key | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          while IFS=$'\t' read -r key value; do
+            echo "| $key | \`$value\` |" >> $GITHUB_STEP_SUMMARY
+          done <<< "$OUTPUTS"
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Infrastructure is ready. Now push code to trigger the deploy workflow.**" >> $GITHUB_STEP_SUMMARY
+
+      # ── Also run code deploy after infra is ready ──────────
+      - name: 📦 Upload initial backend code to S3
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          STACK_NAME="${{ github.event.inputs.stack_name }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          IMAGES_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" --region "$REGION" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ImagesBucketName`].OutputValue' \
+            --output text)
+
+          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" --region "$REGION" \
+            --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' \
+            --output text)
+
+          # Upload backend
+          cd backend
+          tar -czf /tmp/backend.tar.gz server.js package.json schema.sql
+          aws s3 cp /tmp/backend.tar.gz "s3://$IMAGES_BUCKET/backend.tar.gz" --region "$REGION" --no-progress
+          aws s3 cp schema.sql "s3://$IMAGES_BUCKET/schema.sql" --region "$REGION" --no-progress
+          echo "✅ Backend uploaded"
+
+          # Upload frontend
+          cd ../frontend
+          aws s3 cp index.html "s3://$FRONTEND_BUCKET/index.html" \
+            --content-type "text/html" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --region "$REGION" --no-progress
+          echo "✅ Frontend uploaded"
+
+          # Update Lambda
+          LAMBDA_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" --region "$REGION" \
+            --query 'Stacks[0].Outputs[?OutputKey==`LambdaFunctionName`].OutputValue' \
+            --output text)
+          cd ../lambda
+          zip -q /tmp/lambda.zip index.js
+          aws lambda update-function-code \
+            --function-name "$LAMBDA_NAME" \
+            --zip-file fileb:///tmp/lambda.zip \
+            --region "$REGION" --output text --query 'LastModified' > /dev/null
+          echo "✅ Lambda updated"
+
+      # ── DESTROY path ───────────────────────────────────────
+      - name: 🗑️ Empty S3 buckets before deletion
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          STACK_NAME="${{ github.event.inputs.stack_name }}"
+          REGION="${{ secrets.AWS_REGION }}"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          echo "Emptying S3 buckets..."
+          for BUCKET in \
+            "${STACK_NAME}-images-${ACCOUNT_ID}" \
+            "www.learnwithadarsh.site" \
+            "learnwithadarsh.site"; do
+            echo "  Emptying s3://$BUCKET..."
+            aws s3 rm "s3://$BUCKET" --recursive --region "$REGION" 2>/dev/null || echo "  (not found or already empty)"
+          done
+          echo "✅ Buckets emptied"
+
+      - name: 💥 Delete CloudFormation stack
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          STACK_NAME="${{ github.event.inputs.stack_name }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          aws cloudformation delete-stack \
+            --stack-name "$STACK_NAME" \
+            --region "$REGION"
+
+          echo "Stack deletion started — waiting (~10 min for RDS)..."
+          aws cloudformation wait stack-delete-complete \
+            --stack-name "$STACK_NAME" \
+            --region "$REGION"
+
+          echo "✅ All infrastructure deleted!"
+
+          echo "### 💥 Teardown Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Stack \`$STACK_NAME\` and all resources have been deleted." >> $GITHUB_STEP_SUMMARY

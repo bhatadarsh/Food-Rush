@@ -1,0 +1,251 @@
+name: 🚀 Deploy FoodRush
+
+# ─────────────────────────────────────────────────────────────
+# TRIGGERS
+# ─────────────────────────────────────────────────────────────
+on:
+  push:
+    branches:
+      - main          # auto-deploys on every push to main
+    paths-ignore:
+      - 'README.md'
+      - 'explained.md'
+      - '.gitignore'
+      - 'infra/**'    # infra changes use the separate infra.yml workflow
+  workflow_dispatch:  # also allows manual trigger from GitHub UI
+
+# ─────────────────────────────────────────────────────────────
+# PERMISSIONS
+# ─────────────────────────────────────────────────────────────
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  deploy:
+    name: 🍔 Deploy to AWS
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout code ──────────────────────────────────────
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # need previous commit to detect what changed
+
+      # ── 2. Detect what changed ────────────────────────────────
+      - name: 🔍 Detect changed components
+        id: changes
+        run: |
+          # Get list of changed files vs previous commit
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          # Check each component
+          BACKEND_CHANGED=false
+          FRONTEND_CHANGED=false
+          LAMBDA_CHANGED=false
+
+          echo "$CHANGED" | grep -q "^backend/" && BACKEND_CHANGED=true || true
+          echo "$CHANGED" | grep -q "^frontend/" && FRONTEND_CHANGED=true || true
+          echo "$CHANGED" | grep -q "^lambda/"   && LAMBDA_CHANGED=true  || true
+
+          # If this is a manual trigger, deploy everything
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BACKEND_CHANGED=true
+            FRONTEND_CHANGED=true
+            LAMBDA_CHANGED=true
+            echo "Manual trigger — deploying all components"
+          fi
+
+          echo "backend=$BACKEND_CHANGED"   >> $GITHUB_OUTPUT
+          echo "frontend=$FRONTEND_CHANGED" >> $GITHUB_OUTPUT
+          echo "lambda=$LAMBDA_CHANGED"     >> $GITHUB_OUTPUT
+
+          # Summary for GitHub UI
+          echo "### 🔍 Changed Components" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Changed |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend   | $BACKEND_CHANGED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend  | $FRONTEND_CHANGED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lambda    | $LAMBDA_CHANGED |" >> $GITHUB_STEP_SUMMARY
+
+      # ── 3. Configure AWS credentials ──────────────────────────
+      - name: 🔑 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      # ── 4. Read CloudFormation outputs ────────────────────────
+      - name: 📋 Read CloudFormation stack outputs
+        id: cf
+        run: |
+          STACK_NAME="${{ secrets.STACK_NAME || 'foodapp-stack' }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Reading outputs from CF stack: $STACK_NAME"
+
+          OUTPUTS=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$REGION" \
+            --query 'Stacks[0].Outputs' \
+            --output json 2>/dev/null)
+
+          if [ -z "$OUTPUTS" ] || [ "$OUTPUTS" = "null" ]; then
+            echo "❌ CloudFormation stack '$STACK_NAME' not found!"
+            echo "   Run the infra workflow first to create the infrastructure."
+            exit 1
+          fi
+
+          get_output() {
+            echo "$OUTPUTS" | python3 -c "
+          import sys, json
+          outputs = json.load(sys.stdin) or []
+          for o in outputs:
+              if o['OutputKey'] == '$1':
+                  print(o['OutputValue'])
+                  break
+          "
+          }
+
+          IMAGES_BUCKET=$(get_output "ImagesBucketName")
+          FRONTEND_BUCKET=$(get_output "FrontendBucketName")
+          ASG_NAME=$(get_output "ASGName")
+          LAMBDA_NAME=$(get_output "LambdaFunctionName")
+          ALB_DNS=$(get_output "ALBDNSName")
+          TG_ARN=$(get_output "TargetGroupARN")
+
+          echo "images_bucket=$IMAGES_BUCKET"   >> $GITHUB_OUTPUT
+          echo "frontend_bucket=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
+          echo "asg_name=$ASG_NAME"             >> $GITHUB_OUTPUT
+          echo "lambda_name=$LAMBDA_NAME"       >> $GITHUB_OUTPUT
+          echo "alb_dns=$ALB_DNS"               >> $GITHUB_OUTPUT
+          echo "tg_arn=$TG_ARN"                 >> $GITHUB_OUTPUT
+
+          echo "✅ Stack outputs loaded"
+          echo "  Images bucket:   $IMAGES_BUCKET"
+          echo "  Frontend bucket: $FRONTEND_BUCKET"
+          echo "  ASG:             $ASG_NAME"
+          echo "  Lambda:          $LAMBDA_NAME"
+          echo "  ALB:             $ALB_DNS"
+
+      # ── 5. Deploy Backend ─────────────────────────────────────
+      - name: 📦 Package & upload backend
+        if: steps.changes.outputs.backend == 'true'
+        run: |
+          IMAGES_BUCKET="${{ steps.cf.outputs.images_bucket }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Packaging backend..."
+          cd backend
+          tar -czf /tmp/backend.tar.gz server.js package.json schema.sql
+          echo "✅ Packaged ($(du -sh /tmp/backend.tar.gz | cut -f1))"
+
+          echo "Uploading to S3..."
+          aws s3 cp /tmp/backend.tar.gz "s3://$IMAGES_BUCKET/backend.tar.gz" \
+            --region "$REGION" --no-progress
+          aws s3 cp schema.sql "s3://$IMAGES_BUCKET/schema.sql" \
+            --region "$REGION" --no-progress
+          echo "✅ Backend uploaded to s3://$IMAGES_BUCKET/"
+
+      # ── 6. Deploy Frontend ───────────────────────────────────
+      - name: 🌐 Upload frontend to S3
+        if: steps.changes.outputs.frontend == 'true'
+        run: |
+          FRONTEND_BUCKET="${{ steps.cf.outputs.frontend_bucket }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          aws s3 cp frontend/index.html "s3://$FRONTEND_BUCKET/index.html" \
+            --content-type "text/html" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --region "$REGION" --no-progress
+
+          echo "✅ Frontend deployed to http://$FRONTEND_BUCKET"
+
+      # ── 7. Update Lambda ─────────────────────────────────────
+      - name: ⚡ Update Lambda function
+        if: steps.changes.outputs.lambda == 'true' || steps.changes.outputs.backend == 'true'
+        run: |
+          LAMBDA_NAME="${{ steps.cf.outputs.lambda_name }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          cd lambda
+          zip -q /tmp/lambda.zip index.js
+
+          aws lambda update-function-code \
+            --function-name "$LAMBDA_NAME" \
+            --zip-file fileb:///tmp/lambda.zip \
+            --region "$REGION" \
+            --output text --query 'LastModified' > /dev/null
+
+          echo "✅ Lambda updated: $LAMBDA_NAME"
+
+      # ── 8. ASG Instance Refresh ───────────────────────────────
+      - name: 🔄 Trigger ASG rolling refresh
+        if: steps.changes.outputs.backend == 'true'
+        run: |
+          ASG_NAME="${{ steps.cf.outputs.asg_name }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          REFRESH_ID=$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --region "$REGION" \
+            --strategy Rolling \
+            --preferences '{"MinHealthyPercentage":0,"InstanceWarmup":300}' \
+            --output text --query 'InstanceRefreshId' 2>&1)
+
+          if echo "$REFRESH_ID" | grep -q "InstanceRefreshInProgress"; then
+            echo "⚠️  Refresh already in progress"
+          else
+            echo "✅ Instance refresh started: $REFRESH_ID"
+          fi
+
+      # ── 9. Health check ───────────────────────────────────────
+      - name: 🏥 Wait for backend health check
+        if: steps.changes.outputs.backend == 'true'
+        run: |
+          ALB_DNS="${{ steps.cf.outputs.alb_dns }}"
+          TG_ARN="${{ steps.cf.outputs.tg_arn }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Waiting for ALB health... (up to 8 min)"
+          for i in $(seq 1 32); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 8 "http://$ALB_DNS/health" 2>/dev/null || echo "000")
+
+            TG_STATE=$(aws elbv2 describe-target-health \
+              --target-group-arn "$TG_ARN" --region "$REGION" \
+              --query 'TargetHealthDescriptions[*].TargetHealth.State' \
+              --output text 2>/dev/null | tr '\n' ' ')
+
+            echo "  Attempt $i/32 — HTTP $STATUS | Target states: $TG_STATE"
+
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Backend is HEALTHY!"
+              break
+            fi
+
+            if [ $i -eq 32 ]; then
+              echo "⚠️ Health check timed out — instances may still be bootstrapping"
+            fi
+            sleep 15
+          done
+
+      # ── 10. Deployment summary ────────────────────────────────
+      - name: 📊 Deployment summary
+        if: always()
+        run: |
+          echo "### 🚀 FoodRush Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | Link |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | http://www.learnwithadarsh.site |" >> $GITHUB_STEP_SUMMARY
+          echo "| API Root | http://api.learnwithadarsh.site |" >> $GITHUB_STEP_SUMMARY
+          echo "| Health   | http://api.learnwithadarsh.site/health |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
