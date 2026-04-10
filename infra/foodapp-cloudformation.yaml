@@ -792,8 +792,11 @@ Resources:
       Type: A
       AliasTarget:
         # ap-south-1 S3 website hosted zone ID
+        # IMPORTANT: must be the bucket-specific endpoint (not the generic regional one)
+        # Generic endpoint: s3-website.ap-south-1.amazonaws.com → doesn't know which bucket
+        # Bucket-specific:  learnwithadarsh.site.s3-website.ap-south-1.amazonaws.com → correct
         HostedZoneId: Z11RGJOFQNVJUP
-        DNSName: !Sub s3-website.${AWS::Region}.amazonaws.com
+        DNSName: !Sub ${DomainName}.s3-website.${AWS::Region}.amazonaws.com
         EvaluateTargetHealth: false
 
 
